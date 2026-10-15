@@ -392,6 +392,27 @@ final class Repository: ObservableObject {
         return byTs.values.sorted { $0.ts < $1.ts }
     }
 
+    /// Same union + merge shape as `gravitySamplesUnion`/`mergeGravityByTs`, for the step/activity-class
+    /// ticks `WorkoutTypeFeatureExtractor` reads (`classifiedSport(for:)`). The active strap's raw
+    /// physiology namespace wins any exact-ts tie, same as gravity and HR.
+    func stepSamplesUnion(from: Int, to: Int, limit: Int = 200_000) async -> [StepSample] {
+        guard let store = await storeHandle() else { return [] }
+        var lists: [[StepSample]] = []
+        for id in rawPhysiologyReadIds(store: store) {
+            lists.append((try? await store.stepSamples(deviceId: id, from: from, to: to, limit: limit)) ?? [])
+        }
+        return Self.mergeStepsByTs(lists)
+    }
+
+    nonisolated static func mergeStepsByTs(_ lists: [[StepSample]]) -> [StepSample] {
+        if lists.count == 1 { return lists[0] }
+        var byTs: [Int: StepSample] = [:]
+        for list in lists {
+            for s in list where byTs[s.ts] == nil { byTs[s.ts] = s }
+        }
+        return byTs.values.sorted { $0.ts < $1.ts }
+    }
+
     /// Merge R-R reads without treating a timestamp as a beat identity. Several real beats can share a
     /// one-second timestamp; only the complete storage identity `(ts, rrMs, seq)` is a duplicate across
     /// namespaces. The first list is the active strap and therefore wins exact duplicates.
@@ -3304,19 +3325,96 @@ final class Repository: ObservableObject {
             detectedDismissedTokens: dismissedDetectedSpans)
     }
 
-    /// SAVE a suggested window as a manual-style "Workout" (generic sport , we don't claim a sport we
-    /// didn't classify). Built through the same `WorkoutSource.buildManualRow` the manual sheet uses, so
-    /// it persists exactly like a hand-entered session under the strap source. After saving, the screen
-    /// re-queries (the new saved span now excludes this window from re-suggestion).
+    /// SAVE a suggested window as a manual-style workout, labeled with its predicted sport
+    /// (`classifiedSport(for:)`) when confident enough, falling back to the generic "Workout" label
+    /// otherwise — never a wrong specific guess dressed up as fact. Built through the same
+    /// `WorkoutSource.buildManualRow` the manual sheet uses, so it persists exactly like a hand-entered
+    /// session under the strap source. After saving, the screen re-queries (the new saved span now
+    /// excludes this window from re-suggestion).
     @discardableResult
     func saveDetectedWorkout(_ w: DetectedWorkout) async -> Bool {
         let durationMin = max(1, w.durationMin)
         let start = Date(timeIntervalSince1970: TimeInterval(w.startSec))
+        let sport = await classifiedSport(for: w)
         guard let row = WorkoutSource.buildManualRow(start: start, durationMin: durationMin,
-                                                     sport: "Workout", avgHr: w.avgBpm,
+                                                     sport: sport, avgHr: w.avgBpm,
                                                      energyKcal: nil) else { return false }
         await saveManualWorkout(row)
         return true
+    }
+
+    /// Predicts a sport label for a just-detected window via `WorkoutTypeClassifier`, reading the SAME
+    /// decoded HR/gravity/step streams the detector itself scanned (a small pre-roll before `startSec` on
+    /// gravity so the window's first delta isn't a false 0, matching `WorkoutDetector.activitySeries`'
+    /// own convention). This is the ONE resolver both the confirmation card's preview and the actual
+    /// `saveDetectedWorkout` call through — a pure, deterministic read over data that doesn't change in
+    /// the few seconds between showing the card and the user tapping Save, so the two can never disagree.
+    ///
+    /// Falls back to the generic "Workout" label whenever the classifier isn't confident — see
+    /// `classifiedSportGates`' doc comment for the exact bar and why it's checked against raw scores
+    /// rather than `confidence`.
+    func classifiedSport(for w: DetectedWorkout) async -> String {
+        let padStart = max(0, w.startSec - 30)
+        let hr = await hrSamples(from: w.startSec, to: w.endSec, limit: 20_000)
+        let gravity = await gravitySamplesUnion(from: padStart, to: w.endSec, limit: 20_000)
+        let steps = await stepSamplesUnion(from: w.startSec, to: w.endSec, limit: 20_000)
+
+        guard let features = WorkoutTypeFeatureExtractor.extract(
+            hr: hr, gravity: gravity, steps: steps, start: w.startSec, end: w.endSec
+        ) else { return "Workout" }
+
+        let prediction = WorkoutTypeClassifier.classify(features)
+        return Self.sportLabel(for: prediction) ?? "Workout"
+    }
+
+    /// A gate on `WorkoutClassPrediction.scores` (the RAW per-class match scores), not on the squashed
+    /// `confidence` field — `confidence`'s margin/completeness damping keeps even the cleanest fixtures
+    /// in `WorkoutTypeClassifierTests` under ~0.7, so a confidence floor near "hyper précis" can never
+    /// fire. The raw scores separate cleanly instead: every passing RUN fixture in
+    /// `WorkoutTypeClassifierTests`/`WorkoutTypeFeatureExtractorTests` scores run >= 0.95 with its
+    /// runner-up (cycle or ski, never walk/strength) at most ~0.70, while every OTHER class's fixture
+    /// scores run below 0.24 — checked by hand against that suite's own numbers, not guessed. `minScore`/
+    /// `minMargin` sit inside that gap, well clear of both sides.
+    struct SportGate: Equatable {
+        let minScore: Double
+        let minMargin: Double   // over the runner-up's raw score
+    }
+
+    /// `.run` is held to a materially higher bar than the rest, at the user's explicit request ("hyper
+    /// précis pour la course à pied"): a mislabeled run is the mistake that matters most on this
+    /// install, worth trading for more easy/ambiguous runs quietly falling back to "Workout". The other
+    /// classes' floor (0.40 score / 0.05 margin) is NOT a new gate in practice — `WorkoutTypeClassifier.
+    /// classify` already requires at least that much (its own `minPlausibleScore`/`minMargin`) before it
+    /// returns anything other than `.other` — it's named here only so the contract is explicit rather
+    /// than implicit in a different file.
+    nonisolated static let classifiedSportGates: [CoarseWorkoutClass: SportGate] = [
+        .run:      SportGate(minScore: 0.85, minMargin: 0.20),
+        .walk:     SportGate(minScore: WorkoutTypeClassifier.minPlausibleScore, minMargin: WorkoutTypeClassifier.minMargin),
+        .cycle:    SportGate(minScore: WorkoutTypeClassifier.minPlausibleScore, minMargin: WorkoutTypeClassifier.minMargin),
+        .strength: SportGate(minScore: WorkoutTypeClassifier.minPlausibleScore, minMargin: WorkoutTypeClassifier.minMargin),
+        .ski:      SportGate(minScore: WorkoutTypeClassifier.minPlausibleScore, minMargin: WorkoutTypeClassifier.minMargin),
+    ]
+
+    /// Maps a classifier prediction to the sport string `WorkoutSource.buildManualRow` persists (the
+    /// SAME catalogue spelling `WorkoutCatalog.all` and the Android `WorkoutSport.all` use — this value
+    /// round-trips through CSV/Health export, so it must read identically everywhere), or nil when the
+    /// predicted class is `.other` or it doesn't clear `classifiedSportGates` for that class. Pure +
+    /// static so it's unit-testable without a store.
+    nonisolated static func sportLabel(for prediction: WorkoutClassPrediction) -> String? {
+        guard let gate = classifiedSportGates[prediction.predictedClass],
+              let topScore = prediction.scores[prediction.predictedClass] else { return nil }
+        let runnerUp = prediction.scores
+            .filter { $0.key != prediction.predictedClass }
+            .map(\.value).max() ?? 0
+        guard topScore >= gate.minScore, topScore - runnerUp >= gate.minMargin else { return nil }
+        switch prediction.predictedClass {
+        case .run:      return "Running"
+        case .walk:     return "Walking"
+        case .cycle:    return "Cycling"
+        case .strength: return "Strength"
+        case .ski:      return "Skiing"
+        case .other:    return nil
+        }
     }
 
     /// DISMISS a suggested window: record its span durably so it never re-prompts. Idempotent.

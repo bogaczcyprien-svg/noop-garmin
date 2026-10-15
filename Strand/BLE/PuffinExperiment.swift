@@ -249,11 +249,14 @@ enum PuffinExperiment {
     /// Test Centre view via @AppStorage on this key. Mirrors the Android `PuffinExperiment.KEY_HRV_READINESS`.
     static let hrvReadinessKey = "noopHrvReadiness"
 
-    /// Fork: "Auto-detect workouts" is ALWAYS on, no settings toggle — after a sync, NOOP scans the last
-    /// day or two of HR for a SUSTAINED-ELEVATED window (resting HR + 30 bpm held ≥ 8 min, fork-loosened
-    /// from the upstream 12 min) that doesn't overlap a saved workout, and saves it straight away as a
-    /// manual-style Workout, no confirmation (`AppModel.evaluateAutoWorkoutSave`). Upstream shipped this
-    /// as an opt-in, default-OFF suggestion card behind a UserDefaults key; this fork always runs it.
+    /// Fork: "Auto-detect workouts" is ALWAYS on, no settings toggle — `Repository.autoDetectCandidate`
+    /// scans the last day or two of HR for a SUSTAINED-ELEVATED window (resting HR + 30 bpm held ≥ 12
+    /// min, the published `AutoWorkoutDetector.minSustainedMin`) that doesn't overlap a saved workout.
+    /// A no-confirmation auto-save variant briefly existed at a looser 8-min threshold and was reverted
+    /// after it turned ordinary elevated-HR stretches into false "workouts" most days (see
+    /// `AutoWorkoutDetector.swift`'s header) — this fork keeps upstream's opt-in SUGGESTION CARD
+    /// (`DetectedWorkoutSuggestionCard`, on Today) always visible rather than gating it behind a
+    /// settings key, but a human still taps Save before anything is written.
     static let autoDetectWorkoutsKey = "noopAutoDetectWorkouts"
 
     static var autoDetectWorkoutsEnabled: Bool { true }

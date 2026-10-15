@@ -397,10 +397,11 @@ struct LiquidTodayView: View {
                         case .addedCards: if selectedDayOffset == 0 { hostedCardsSection }
                         }
                     }
-                    // Fork: no more "looks like a workout?" card to confirm. Auto-detect (same
-                    // PuffinExperiment.autoDetectWorkoutsEnabled toggle) now saves a detected window
-                    // straight away in the background (AppModel.evaluateAutoWorkoutSave) — see
-                    // AutoWorkoutDetector.swift's header for why.
+                    // Fork, restored (#detected-workout-sport-precision): the "looks like a workout?"
+                    // confirmation card, now labeled with its predicted sport when the classifier is
+                    // confident enough. Self-hiding — see `DetectedWorkoutSuggestionCard`'s own doc
+                    // comment.
+                    DetectedWorkoutSuggestionCard()
                     dataSourcesSection
                     Color.clear.frame(height: 90) // floating tab-bar clearance
                 }

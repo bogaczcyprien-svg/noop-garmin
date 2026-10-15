@@ -20,9 +20,11 @@ import WhoopProtocol
 // several false "workouts" a day while still missing the real session. Back to the upstream-published
 // thresholds: a sustained ≥ 12-min elevation of HR ≥ resting + 30 bpm, brief (≤ 90 s) dips tolerated,
 // near windows merged. Tuned to avoid false positives from stress / caffeine / a brief flight of
-// stairs, at the cost of missing the odd short or gentle session — this detector is currently UNUSED
-// (its only caller, AppModel.evaluateAutoWorkoutSave, was removed); kept for a possible future
-// confirmation-card revival. An OPTIONAL continuous motion signal, when one is readily available, is
+// stairs, at the cost of missing the odd short or gentle session. Its only caller for a time
+// (`AppModel.evaluateAutoWorkoutSave`, the no-confirmation auto-save above) was removed along with
+// that revert; `Repository.autoDetectCandidate` is the live caller now, backing
+// `DetectedWorkoutSuggestionCard` (Today) — a human taps Save before anything is written, same as
+// upstream's own design. An OPTIONAL continuous motion signal, when one is readily available, is
 // required as confirmation; with no motion series it runs HR-only.
 //
 // The 10- and 15-minute alternatives are SHADOW policies only. Test Centre may run them beside the
