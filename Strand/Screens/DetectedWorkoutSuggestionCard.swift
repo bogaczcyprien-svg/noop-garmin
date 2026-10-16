@@ -42,7 +42,7 @@ struct DetectedWorkoutSuggestionCard: View {
                     Image(systemName: icon(for: predictedSport))
                         .foregroundStyle(StrandPalette.effortColor)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("Looks like \(sportWording(predictedSport))")
+                        headline(for: predictedSport)
                             .font(StrandFont.subhead)
                             .foregroundStyle(StrandPalette.textPrimary)
                         Text(timeRangeLabel(candidate))
@@ -72,15 +72,18 @@ struct DetectedWorkoutSuggestionCard: View {
         }
     }
 
-    private func sportWording(_ predictedSport: String?) -> String {
-        guard let predictedSport else { return "a workout" }
+    /// A full, standalone headline per predicted sport — NOT `"Looks like " + sportWording(...)`
+    /// interpolated together. i18n-coverage flagged exactly that shape: assembling a sentence from a
+    /// translated word plus a template loses word order/grammar a translator needs control over
+    /// (e.g. gendered articles), so each complete sentence gets its own catalog entry instead.
+    private func headline(for predictedSport: String?) -> Text {
         switch predictedSport {
-        case "Running":  return "a run"
-        case "Walking":  return "a walk"
-        case "Cycling":  return "a ride"
-        case "Strength": return "a strength session"
-        case "Skiing":   return "a ski session"
-        default:         return "a workout"
+        case "Running":  return Text("Looks like a run")
+        case "Walking":  return Text("Looks like a walk")
+        case "Cycling":  return Text("Looks like a ride")
+        case "Strength": return Text("Looks like a strength session")
+        case "Skiing":   return Text("Looks like a ski session")
+        default:         return Text("Looks like a workout")
         }
     }
 
