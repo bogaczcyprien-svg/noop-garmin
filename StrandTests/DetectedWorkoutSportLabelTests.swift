@@ -20,7 +20,7 @@ final class DetectedWorkoutSportLabelTests: XCTestCase {
 
     /// Twin of `WorkoutTypeClassifierTests.testRunShapedWindow_dominantRunTicks_isClassifiedRun`'s
     /// fixture, scored by hand against `WorkoutTypeClassifier`'s published weights: run ≈ 0.958 vs. a
-    /// cycle runner-up ≈ 0.55 — comfortably clears the run gate (score ≥ 0.85, margin ≥ 0.20).
+    /// cycle runner-up ≈ 0.55 — comfortably clears the run gate (score ≥ 0.80, margin ≥ 0.12).
     func testCleanTickBackedRun_clearsTheRunGate() {
         let prediction = WorkoutClassPrediction(
             predictedClass: .run, confidence: 0.67,
@@ -68,9 +68,9 @@ final class DetectedWorkoutSportLabelTests: XCTestCase {
     func testRunPredictionWithThinMargin_fallsBackToGeneric() {
         let prediction = WorkoutClassPrediction(
             predictedClass: .run, confidence: 0.6,
-            scores: [.run: 0.90, .walk: 0.10, .strength: 0.05, .cycle: 0.80, .ski: 0.30])
+            scores: [.run: 0.90, .walk: 0.10, .strength: 0.05, .cycle: 0.81, .ski: 0.30])
         XCTAssertNil(Repository.sportLabel(for: prediction),
-                     "a 0.10 margin over cycle doesn't clear run's 0.20 margin floor")
+                     "a 0.09 margin over cycle doesn't clear run's 0.12 margin floor")
     }
 
     /// Twin of `WorkoutTypeClassifierTests.testLowHRWalk_isClassifiedWalk` — the general 0.40/0.05 gate

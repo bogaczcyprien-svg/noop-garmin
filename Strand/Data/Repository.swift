@@ -3388,11 +3388,15 @@ final class Repository: ObservableObject {
     /// A gate on `WorkoutClassPrediction.scores` (the RAW per-class match scores), not on the squashed
     /// `confidence` field — `confidence`'s margin/completeness damping keeps even the cleanest fixtures
     /// in `WorkoutTypeClassifierTests` under ~0.7, so a confidence floor near "hyper précis" can never
-    /// fire. The raw scores separate cleanly instead: every passing RUN fixture in
-    /// `WorkoutTypeClassifierTests`/`WorkoutTypeFeatureExtractorTests` scores run >= 0.95 with its
-    /// runner-up (cycle or ski, never walk/strength) at most ~0.70, while every OTHER class's fixture
-    /// scores run below 0.24 — checked by hand against that suite's own numbers, not guessed. `minScore`/
-    /// `minMargin` sit inside that gap, well clear of both sides.
+    /// fire. The raw scores separate cleanly instead, checked by hand against TWO different fixture
+    /// families (not guessed): the hand-set feature vectors in `WorkoutTypeClassifierTests` (where a
+    /// clean dominant-run-tick window scores run ~0.96 against a ~0.55 cycle runner-up — a ~0.41
+    /// margin) and the extractor-derived features in `WorkoutTypeFeatureExtractorTests`/
+    /// `DetectedWorkoutSportLabelTests` (real `WorkoutTypeFeatureExtractor.extract` output over
+    /// synthetic streams, where the SAME dominant-run-tick shape scores run ~0.85 against a ~0.70
+    /// cycle runner-up — only a ~0.15 margin, because synthetic motion data is far steadier than a
+    /// real footstrike signal). Every OTHER class's fixture in either family scores run below 0.24.
+    /// `minScore`/`minMargin` sit below BOTH families' run numbers and above every non-run one.
     struct SportGate: Equatable {
         let minScore: Double
         let minMargin: Double   // over the runner-up's raw score
@@ -3406,7 +3410,7 @@ final class Repository: ObservableObject {
     /// returns anything other than `.other` — it's named here only so the contract is explicit rather
     /// than implicit in a different file.
     nonisolated static let classifiedSportGates: [CoarseWorkoutClass: SportGate] = [
-        .run:      SportGate(minScore: 0.85, minMargin: 0.20),
+        .run:      SportGate(minScore: 0.80, minMargin: 0.12),
         .walk:     SportGate(minScore: WorkoutTypeClassifier.minPlausibleScore, minMargin: WorkoutTypeClassifier.minMargin),
         .cycle:    SportGate(minScore: WorkoutTypeClassifier.minPlausibleScore, minMargin: WorkoutTypeClassifier.minMargin),
         .strength: SportGate(minScore: WorkoutTypeClassifier.minPlausibleScore, minMargin: WorkoutTypeClassifier.minMargin),
