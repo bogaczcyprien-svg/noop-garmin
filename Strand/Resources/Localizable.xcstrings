@@ -184244,6 +184244,71 @@
         }
       }
     },
+    "Looks like a run": {
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Sieht nach einem Lauf aus" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Parece una carrera" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "On dirait une course à pied" } },
+        "it": { "stringUnit": { "state": "translated", "value": "Sembra una corsa" } },
+        "pt-PT": { "stringUnit": { "state": "translated", "value": "Parece uma corrida" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Похоже на пробежку" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "看起来像是跑步" } },
+        "zh-Hant": { "stringUnit": { "state": "translated", "value": "看起來像是跑步" } },
+        "pl": { "stringUnit": { "state": "translated", "value": "Wygląda na bieganie" } }
+      }
+    },
+    "Looks like a walk": {
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Sieht nach einem Spaziergang aus" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Parece una caminata" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "On dirait une marche" } },
+        "it": { "stringUnit": { "state": "translated", "value": "Sembra una camminata" } },
+        "pt-PT": { "stringUnit": { "state": "translated", "value": "Parece uma caminhada" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Похоже на прогулку" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "看起来像是步行" } },
+        "zh-Hant": { "stringUnit": { "state": "translated", "value": "看起來像是步行" } },
+        "pl": { "stringUnit": { "state": "translated", "value": "Wygląda na spacer" } }
+      }
+    },
+    "Looks like a ride": {
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Sieht nach einer Radtour aus" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Parece un paseo en bicicleta" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "On dirait une sortie vélo" } },
+        "it": { "stringUnit": { "state": "translated", "value": "Sembra un giro in bici" } },
+        "pt-PT": { "stringUnit": { "state": "translated", "value": "Parece um passeio de bicicleta" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Похоже на поездку на велосипеде" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "看起来像是骑行" } },
+        "zh-Hant": { "stringUnit": { "state": "translated", "value": "看起來像是騎行" } },
+        "pl": { "stringUnit": { "state": "translated", "value": "Wygląda na jazdę na rowerze" } }
+      }
+    },
+    "Looks like a strength session": {
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Sieht nach einem Krafttraining aus" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Parece una sesión de fuerza" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "On dirait une séance de musculation" } },
+        "it": { "stringUnit": { "state": "translated", "value": "Sembra una sessione di forza" } },
+        "pt-PT": { "stringUnit": { "state": "translated", "value": "Parece uma sessão de força" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Похоже на силовую тренировку" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "看起来像是力量训练" } },
+        "zh-Hant": { "stringUnit": { "state": "translated", "value": "看起來像是力量訓練" } },
+        "pl": { "stringUnit": { "state": "translated", "value": "Wygląda na trening siłowy" } }
+      }
+    },
+    "Looks like a ski session": {
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Sieht nach einer Skisession aus" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Parece una sesión de esquí" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "On dirait une session de ski" } },
+        "it": { "stringUnit": { "state": "translated", "value": "Sembra una sessione di sci" } },
+        "pt-PT": { "stringUnit": { "state": "translated", "value": "Parece uma sessão de esqui" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Похоже на катание на лыжах" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "看起来像是滑雪" } },
+        "zh-Hant": { "stringUnit": { "state": "translated", "value": "看起來像是滑雪" } },
+        "pl": { "stringUnit": { "state": "translated", "value": "Wygląda na jazdę na nartach" } }
+      }
+    },
     "Workout file (GPX / TCX / FIT)": {
       "localizations": {
         "de": {
