@@ -6,10 +6,14 @@ import StrandAnalytics
 @testable import Strand
 
 /// #detected-workout-sport-precision: the confirmation card now labels a detected window with its
-/// predicted sport instead of the generic "Workout", but ONLY confidently enough — the user's explicit
-/// ask was "hyper précis pour la course à pied" (never a wrong specific guess for running, even at the
-/// cost of more runs falling back to "Workout"). `Repository.sportLabel(for:)` is the pure gate that
-/// decision runs through; these pin it against the EXACT `WorkoutClassPrediction` numbers the existing
+/// predicted sport instead of the generic "Workout". `.run` was originally held to a stricter bar
+/// than `WorkoutTypeClassifier.classify`'s own general one, but the user explicitly walked that back
+/// after seeing it in practice: "pas besoin d'une exigence très stricte, juste il faut vraiment que tu
+/// arrives à le voir bien" — running needs to actually get SEEN reliably (recall), not filtered by an
+/// extra margin on top of what the classifier already requires. `.run` now uses that same general
+/// floor; `.strength` (muscu, a request the user has NOT walked back) and `.golf` (new, unvalidated)
+/// keep their own stricter bars. `Repository.sportLabel(for:)` is the pure gate that decision runs
+/// through; these pin it against the EXACT `WorkoutClassPrediction` numbers the existing
 /// `WorkoutTypeClassifierTests`/`WorkoutTypeFeatureExtractorTests` fixtures produce (hand-computed from
 /// `WorkoutTypeClassifier`'s published formula, not guessed), so a change to either the gate or the
 /// classifier's weights that breaks this separation is caught here.
@@ -20,8 +24,8 @@ final class DetectedWorkoutSportLabelTests: XCTestCase {
 
     /// Twin of `WorkoutTypeClassifierTests.testRunShapedWindow_dominantRunTicks_isClassifiedRun`'s
     /// fixture, scored by hand against `WorkoutTypeClassifier`'s published weights: run ≈ 0.958 vs. a
-    /// cycle runner-up ≈ 0.55 — comfortably clears the run gate (score ≥ 0.80, margin ≥ 0.12).
-    func testCleanTickBackedRun_clearsTheRunGate() {
+    /// cycle runner-up ≈ 0.55 — clears the (now general) run gate easily.
+    func testCleanTickBackedRun_getsTheRunningLabel() {
         let prediction = WorkoutClassPrediction(
             predictedClass: .run, confidence: 0.67,
             scores: [.run: 0.9583, .walk: 0.0, .strength: 0.10, .cycle: 0.55, .ski: 0.50])
@@ -30,9 +34,8 @@ final class DetectedWorkoutSportLabelTests: XCTestCase {
 
     /// Twin of `WorkoutTypeClassifierTests.testRunShapedWindow_noTicks_fallsBackToHRAndMotion`'s
     /// fixture (no activity-class ticks at all — a WHOOP 4.0 capture): run ≈ 0.955 vs. a cycle
-    /// runner-up ≈ 0.70, still comfortably inside the gate even with the weaker, tick-less fallback
-    /// score — this is the case that proves the gate isn't ONLY reachable when ticks are present.
-    func testNoTickRunFallback_stillClearsTheRunGate() {
+    /// runner-up ≈ 0.70 — proves the label isn't ONLY reachable when ticks are present.
+    func testNoTickRunFallback_getsTheRunningLabel() {
         let prediction = WorkoutClassPrediction(
             predictedClass: .run, confidence: 0.51,
             scores: [.run: 0.955, .walk: 0.0, .strength: 0.20, .cycle: 0.70, .ski: 0.65])
@@ -50,27 +53,17 @@ final class DetectedWorkoutSportLabelTests: XCTestCase {
         XCTAssertNil(Repository.sportLabel(for: prediction))
     }
 
-    /// A run score that is high in isolation but NOT held to the run-specific bar — e.g. a brisk-walk-
-    /// shaped window where the classifier (hypothetically, or after a future retune) still predicts
-    /// `.run` at a score just over the GENERAL 0.40/0.05 floor but well under the run-specific 0.85/0.20
-    /// one. Must still fall back to the generic label: the whole point of the asymmetric gate is that
-    /// clearing the general bar is NOT enough for `.run`.
-    func testRunPredictionBelowTheRunSpecificBar_fallsBackToGeneric() {
+    /// A run prediction that only just clears `WorkoutTypeClassifier.classify`'s own general
+    /// 0.40/0.05 bar (the weakest possible prediction that still isn't `.other`) — since `.run` now
+    /// shares that same floor, this MUST get the "Running" label, not fall back to generic. This is
+    /// the exact case the user asked to fix: a run that is real but not textbook-clean must still
+    /// get seen.
+    func testWeakButRealRunPrediction_stillGetsTheRunningLabel() {
         let prediction = WorkoutClassPrediction(
             predictedClass: .run, confidence: 0.3,
-            scores: [.run: 0.55, .walk: 0.10, .strength: 0.05, .cycle: 0.45, .ski: 0.20])
-        XCTAssertNil(Repository.sportLabel(for: prediction),
-                     "0.55 clears the general 0.40 floor but not run's own 0.85 one")
-    }
-
-    /// A run score that clears the score floor but NOT the margin floor against a close cycle
-    /// runner-up — the ambiguity a bare score threshold alone would miss.
-    func testRunPredictionWithThinMargin_fallsBackToGeneric() {
-        let prediction = WorkoutClassPrediction(
-            predictedClass: .run, confidence: 0.6,
-            scores: [.run: 0.90, .walk: 0.10, .strength: 0.05, .cycle: 0.81, .ski: 0.30])
-        XCTAssertNil(Repository.sportLabel(for: prediction),
-                     "a 0.09 margin over cycle doesn't clear run's 0.12 margin floor")
+            scores: [.run: 0.41, .walk: 0.10, .strength: 0.05, .cycle: 0.35, .ski: 0.20])
+        XCTAssertEqual(Repository.sportLabel(for: prediction), "Running",
+                       "run uses the same general floor as walk/cycle/ski now — recall over precision")
     }
 
     /// Twin of `WorkoutTypeClassifierTests.testLowHRWalk_isClassifiedWalk` — the general 0.40/0.05 gate

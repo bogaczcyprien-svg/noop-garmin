@@ -3404,41 +3404,33 @@ final class Repository: ObservableObject {
 
     /// A gate on `WorkoutClassPrediction.scores` (the RAW per-class match scores), not on the squashed
     /// `confidence` field — `confidence`'s margin/completeness damping keeps even the cleanest fixtures
-    /// in `WorkoutTypeClassifierTests` under ~0.7, so a confidence floor near "hyper précis" can never
-    /// fire. The raw scores separate cleanly instead, checked by hand against TWO different fixture
-    /// families (not guessed): the hand-set feature vectors in `WorkoutTypeClassifierTests` (where a
-    /// clean dominant-run-tick window scores run ~0.96 against a ~0.55 cycle runner-up — a ~0.41
-    /// margin) and the extractor-derived features in `WorkoutTypeFeatureExtractorTests`/
-    /// `DetectedWorkoutSportLabelTests` (real `WorkoutTypeFeatureExtractor.extract` output over
-    /// synthetic streams, where the SAME dominant-run-tick shape scores run ~0.85 against a ~0.70
-    /// cycle runner-up — only a ~0.15 margin, because synthetic motion data is far steadier than a
-    /// real footstrike signal). Every OTHER class's fixture in either family scores run below 0.24.
-    /// `minScore`/`minMargin` sit below BOTH families' run numbers and above every non-run one.
+    /// in `WorkoutTypeClassifierTests` under ~0.7, so a confidence floor set anywhere near a "strict"
+    /// bar would almost never fire — the earlier run-specific version of this gate (0.80/0.12) learned
+    /// that the hard way: real extractor-pipeline numbers (~0.85/0.15, see `DetectedWorkoutSportLabelTests`)
+    /// run noticeably lower than hand-set fixtures (~0.96/0.41), and the user's explicit correction after
+    /// seeing it in practice was that running should NOT be held back by an extra bar — "pas besoin
+    /// d'une exigence très stricte, juste il faut vraiment que tu arrives à le voir bien" (it needs to
+    /// actually get SEEN reliably, recall matters more than an extra precision margin on top of what
+    /// the classifier already requires). `.run` therefore uses the SAME general floor as walk/cycle/ski
+    /// below. `.strength` keeps its own stricter bar (0.80/0.15, calibrated against
+    /// `WorkoutTypeClassifierTests`' two strength fixtures: scores 1.00/0.91, margins 0.30/0.21 over
+    /// their ski runner-up) since the user asked for muscu specifically and hasn't walked that back.
+    /// `.golf` is new and unvalidated against any real round, so it keeps a deliberately wide margin of
+    /// its own (0.75/0.15) rather than the general floor.
     struct SportGate: Equatable {
         let minScore: Double
         let minMargin: Double   // over the runner-up's raw score
     }
 
-    /// `.run` and `.strength` are held to a materially higher bar than the rest, at the user's explicit
-    /// request ("hyper précis pour la course à pied... aussi de la muscu"): running and lifting are
-    /// the two sports actually logged on this install, so a mislabel there is the mistake that matters
-    /// most — worth trading for more ambiguous sessions quietly falling back to "Workout". `.run`'s
-    /// bar is verified against BOTH a hand-set fixture family and a real extractor-pipeline integration
-    /// test (`DetectedWorkoutSportLabelTests`); `.strength`'s is calibrated the same way against its own
-    /// two `WorkoutTypeClassifierTests` fixtures (scores 1.00/0.91, margins 0.30/0.21 over their ski
-    /// runner-up) but has NOT been re-verified through the real extractor pipeline the way run's was —
-    /// kept at run's own proven-achievable floor rather than the more optimistic hand-fixture numbers,
-    /// since that pipeline check is what caught run's hand-fixture margin being unrealistically generous
-    /// (0.41 by hand vs. ~0.15 for real synthetic motion data). `.golf` is new and unvalidated against
-    /// any real round, so it keeps a deliberately wide margin of its own (0.75/0.15) rather than run's
-    /// tighter one. The remaining classes' floor (0.40 score / 0.05 margin) is NOT a new gate in
-    /// practice — `WorkoutTypeClassifier.classify` already requires at least that much (its own
+    /// The general floor (`.run`/`.walk`/`.cycle`/`.ski`) is NOT a new gate in practice —
+    /// `WorkoutTypeClassifier.classify` already requires at least that much (its own
     /// `minPlausibleScore`/`minMargin`) before it returns anything other than `.other` — it's named
-    /// here only so the contract is explicit rather than implicit in a different file.
+    /// here only so the contract is explicit rather than implicit in a different file. `.strength`
+    /// and `.golf` are the two REAL gates above that floor; see `SportGate`'s doc comment for why.
     nonisolated static let classifiedSportGates: [CoarseWorkoutClass: SportGate] = [
-        .run:      SportGate(minScore: 0.80, minMargin: 0.12),
         .strength: SportGate(minScore: 0.80, minMargin: 0.15),
         .golf:     SportGate(minScore: 0.75, minMargin: 0.15),
+        .run:      SportGate(minScore: WorkoutTypeClassifier.minPlausibleScore, minMargin: WorkoutTypeClassifier.minMargin),
         .walk:     SportGate(minScore: WorkoutTypeClassifier.minPlausibleScore, minMargin: WorkoutTypeClassifier.minMargin),
         .cycle:    SportGate(minScore: WorkoutTypeClassifier.minPlausibleScore, minMargin: WorkoutTypeClassifier.minMargin),
         .ski:      SportGate(minScore: WorkoutTypeClassifier.minPlausibleScore, minMargin: WorkoutTypeClassifier.minMargin),
