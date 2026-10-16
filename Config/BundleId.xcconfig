@@ -10,7 +10,11 @@
 // BundleIdSecrets.example.xcconfig). Set BUNDLE_ID_PREFIX there when building under your own
 // Apple ID / device so this build's bundle id, App Group, and watch companion pairing don't
 // collide with an installed copy of the official com.noopapp build.
-BUNDLE_ID_PREFIX = com.noopapp
+// noop-garmin (#detected-workout-sport-precision): this repo is a genuinely separate app from the
+// upstream `com.noopapp` build and from the user's own `noop` fork — both installed via SideStore
+// at once, so this MUST NOT share a bundle id/App Group/watch pairing with either, or installing
+// one would collide with or overwrite the other on the same device (see the comment below).
+BUNDLE_ID_PREFIX = com.noopapp.garmin
 // Empty by default: CODE_SIGN_STYLE is Automatic and macOS ad-hoc builds (see docs/BUILD.md) need
 // no team at all. Set DEVELOPMENT_TEAM in BundleIdSecrets.xcconfig to run on a physical iPhone or
 // to stop Xcode from asking you to reselect a team after every `xcodegen generate`.
