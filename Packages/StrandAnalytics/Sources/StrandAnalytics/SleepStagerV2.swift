@@ -750,7 +750,20 @@ public enum SleepStagerV2 {
             // pass 2 below guards them against the real onset as usual.
             var probe = unclamped
             for i in feats.indices { probe[i]["rem"]! -= leadInProbeGuard(feats[i].minutesSinceOnset) }
-            let cut = leadInCardiacWakeEnd(feats, openLabels: viterbi(probe))
+            let openLabels = viterbi(probe)
+            let cut = leadInCardiacWakeEnd(feats, openLabels: openLabels)
+            // TEMP DEBUG (#detected-workout-sport-precision): remove before landing.
+            if feats.count > 300 && feats[0].minutesSinceOnset < 1 {
+                FileHandle.standardError.write("DEBUG cut=\(cut) nFeats=\(feats.count)\n".data(using: .utf8)!)
+                for i in [0, 1, 50, 100, 101, 102, 150, 200, 299, 300, 301] where i < feats.count {
+                    let f = feats[i]
+                    FileHandle.standardError.write(
+                        "DEBUG epoch[\(i)] min=\(f.minutesSinceOnset) hr=\(f.hr ?? -1) hrVar=\(f.hrVar ?? -1) " +
+                        "unclamped={awake:\(unclamped[i]["awake"]!),rem:\(unclamped[i]["rem"]!),light:\(unclamped[i]["light"]!),deep:\(unclamped[i]["deep"]!)} " +
+                        "probe={awake:\(probe[i]["awake"]!),rem:\(probe[i]["rem"]!)} openLabel=\(openLabels[i])\n"
+                            .data(using: .utf8)!)
+                }
+            }
             for i in 0..<cut { seq[i] = unclamped[i] }
         }
 
