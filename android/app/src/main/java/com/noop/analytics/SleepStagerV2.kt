@@ -507,6 +507,20 @@ object SleepStagerV2 {
     internal fun remLatencyGuard(minutesSinceOnset: Double): Double =
         remLatencyPenalty * minOf(1.0, maxOf(0.0, 1.0 - minutesSinceOnset / remLatencyMinutes))
 
+    /** #detected-workout-sport-precision sibling fix: PASS 0's probe-only REM suppression. Same STRENGTH
+     *  ([remLatencyPenalty]) as [remLatencyGuard], but decaying over [leadInCardiacWakeMaxMinutes] (90)
+     *  instead of the physiological [remLatencyMinutes] (60) — the two guards serve DIFFERENT purposes and
+     *  must not share a decay window just because they share a shape. [remLatencyGuard] models how long
+     *  real post-onset REM latency lasts against PSG truth (not to be changed for that). This probe only
+     *  needs to keep a still, elevated-HR epoch from scoring as REM for as long as the lead-in CAP can
+     *  possibly reach: with the 60-minute guard, REM's unguarded emission overtakes a still-awake epoch's
+     *  unclamped cardiac one once the guard has decayed past roughly half its strength, well before minute
+     *  90 — REM would then win the probe for the last ~30 minutes of a long lead-in, before the cap even
+     *  gets a chance to bound anything (the failure [SleepStagerV2]'s Swift twin's
+     *  `testLiftIsBoundedByTheCapOnALongElevatedLeadIn` caught). Mirrors Swift `leadInProbeGuard`. */
+    internal fun leadInProbeGuard(minutesSinceOnset: Double): Double =
+        remLatencyPenalty * minOf(1.0, maxOf(0.0, 1.0 - minutesSinceOnset / leadInCardiacWakeMaxMinutes))
+
     /** Soft sleep-cycle prior added to the log-emission: deep concentrated early (decays, never hard-wiped);
      *  REM suppressed around sleep onset (REM latency) then rising toward morning.
      *
@@ -675,12 +689,14 @@ object SleepStagerV2 {
         // only. See [leadInCardiacWakeEnd] for the rule and its bound. Mirrors Swift.
         if (leadInCardiacWake) {
             val unclamped = feats.map { emission(it, clampQuiescentCardiac = false) }
-            // The probe carries the REM-latency guard from the WINDOW START: a still, elevated-HR lead-in
-            // otherwise scores REM nearly as well as wake, and a probe that calls it REM finds "sleep" at
-            // epoch 0 and lifts nothing. Probe-only; `seq` gets the unguarded rows and pass 2 below guards
-            // them against the real onset as usual. Mirrors Swift.
+            // The probe carries `leadInProbeGuard` (its own 90-min-window REM suppression, NOT the
+            // physiological `remLatencyGuard` pass 2 uses below) from the WINDOW START: a still,
+            // elevated-HR lead-in otherwise scores REM nearly as well as wake — or outright beats it once
+            // a 60-min guard would have decayed — and a probe that calls it REM finds "sleep" at or before
+            // the cap and lifts nothing (or too little). Probe-only; `seq` gets the unguarded rows and
+            // pass 2 below guards them against the real onset as usual. Mirrors Swift.
             val probe = unclamped.mapIndexed { i, em ->
-                HashMap(em).also { it["rem"] = it["rem"]!! - remLatencyGuard(feats[i].minutesSinceOnset) }
+                HashMap(em).also { it["rem"] = it["rem"]!! - leadInProbeGuard(feats[i].minutesSinceOnset) }
             }
             val cut = leadInCardiacWakeEnd(feats, viterbi(probe))
             for (i in 0 until cut) seq[i] = unclamped[i]
