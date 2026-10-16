@@ -3350,6 +3350,16 @@ final class Repository: ObservableObject {
     /// `saveDetectedWorkout` call through — a pure, deterministic read over data that doesn't change in
     /// the few seconds between showing the card and the user tapping Save, so the two can never disagree.
     ///
+    /// Resolves REAL resting-HR/HRmax baselines rather than letting `WorkoutTypeFeatureExtractor` fall
+    /// back to deriving them from the bout window alone — a single detected bout is, by construction, a
+    /// sustained ELEVATED span with no resting baseline inside it (the same reason `autoDetectCandidate`
+    /// scans a multi-day window rather than the bout itself), so that fallback would derive a bogus
+    /// "resting HR" from a flat, all-elevated window and silently wreck the %HRR term every score above
+    /// depends on. restingHR comes from the most recent nightly RHR on record, same as
+    /// `autoDetectCandidate`'s own `restingBpm`; HRmax from `StrainScorer.estimateHRmax` over a wide
+    /// recent HR window (not the narrow bout), the SAME formula the extractor's own fallback uses, just
+    /// fed a window wide enough to contain real variation.
+    ///
     /// Falls back to the generic "Workout" label whenever the classifier isn't confident — see
     /// `classifiedSportGates`' doc comment for the exact bar and why it's checked against raw scores
     /// rather than `confidence`.
@@ -3359,8 +3369,16 @@ final class Repository: ObservableObject {
         let gravity = await gravitySamplesUnion(from: padStart, to: w.endSec, limit: 20_000)
         let steps = await stepSamplesUnion(from: w.startSec, to: w.endSec, limit: 20_000)
 
+        let restingHR = days.last(where: { $0.restingHr != nil })?.restingHr.map(Double.init)
+        let wideHR = await hrSamples(from: w.startSec - 2 * 86_400, to: w.endSec, limit: 20_000)
+        let maxHR: Double? = {
+            let (estimate, _) = StrainScorer.estimateHRmax(wideHR.map { Double($0.bpm) }, age: nil)
+            return estimate > 0 ? estimate : nil
+        }()
+
         guard let features = WorkoutTypeFeatureExtractor.extract(
-            hr: hr, gravity: gravity, steps: steps, start: w.startSec, end: w.endSec
+            hr: hr, gravity: gravity, steps: steps, start: w.startSec, end: w.endSec,
+            restingHR: restingHR, maxHR: maxHR
         ) else { return "Workout" }
 
         let prediction = WorkoutTypeClassifier.classify(features)

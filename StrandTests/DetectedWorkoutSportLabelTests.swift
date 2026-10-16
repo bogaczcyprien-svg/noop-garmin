@@ -129,6 +129,14 @@ final class DetectedWorkoutSportLabelTests: XCTestCase {
 
         let repo = Repository(deviceId: deviceId)
         repo.setStoreForTesting(store)
+        // `classifiedSport(for:)` resolves resting HR from the most recent nightly RHR on record
+        // (same as `autoDetectCandidate`'s own `restingBpm`), NOT by deriving one from the bout
+        // window itself — a single detected bout is by construction all-elevated, with no resting
+        // baseline inside it. A real day always has this by the time the detector runs (the nightly
+        // scoring pass writes it), so the test supplies the same thing directly.
+        repo.days = [DailyMetric(day: "2026-01-01", totalSleepMin: nil, efficiency: nil, deepMin: nil,
+                                 remMin: nil, lightMin: nil, disturbances: nil, restingHr: 60,
+                                 avgHrv: nil, recovery: nil, strain: nil, exerciseCount: nil)]
 
         let candidate = DetectedWorkout(startSec: start, endSec: start + dur,
                                         avgBpm: 160, peakBpm: 168, durationMin: 20)
