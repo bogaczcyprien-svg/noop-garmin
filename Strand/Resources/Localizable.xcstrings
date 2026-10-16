@@ -184309,6 +184309,32 @@
         "pl": { "stringUnit": { "state": "translated", "value": "Wygląda na jazdę na nartach" } }
       }
     },
+    "Why?": {
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Warum?" } },
+        "es": { "stringUnit": { "state": "translated", "value": "¿Por qué?" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Pourquoi ?" } },
+        "it": { "stringUnit": { "state": "translated", "value": "Perché?" } },
+        "pt-PT": { "stringUnit": { "state": "translated", "value": "Porquê?" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Почему?" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "为什么？" } },
+        "zh-Hant": { "stringUnit": { "state": "translated", "value": "為什麼？" } },
+        "pl": { "stringUnit": { "state": "translated", "value": "Czemu?" } }
+      }
+    },
+    "Looks like a round of golf": {
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Sieht nach einer Runde Golf aus" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Parece una ronda de golf" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "On dirait une partie de golf" } },
+        "it": { "stringUnit": { "state": "translated", "value": "Sembra un giro di golf" } },
+        "pt-PT": { "stringUnit": { "state": "translated", "value": "Parece uma ronda de golfe" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Похоже на партию в гольф" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "看起来像是打高尔夫" } },
+        "zh-Hant": { "stringUnit": { "state": "translated", "value": "看起來像是打高爾夫" } },
+        "pl": { "stringUnit": { "state": "translated", "value": "Wygląda na partię golfa" } }
+      }
+    },
     "Workout file (GPX / TCX / FIT)": {
       "localizations": {
         "de": {

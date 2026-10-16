@@ -63,6 +63,21 @@ object AutoWorkoutDetector {
     const val defaultRestingHR: Int = 60
 
     /**
+     * Second, alternate detection policy (#detected-workout-sport-precision) for long, LOW-intensity
+     * sessions the published 30-bpm/12-min policy structurally cannot see — a round of golf rarely
+     * sustains +30 bpm continuously; walking fairways/standing between shots dips well under that
+     * floor for well over [maxDipS] at a time, so the published policy either never opens a span or
+     * fragments the round into several short, discarded ones. This alternate policy trades a MUCH
+     * lower elevated margin for a MUCH longer required duration: a 15-bpm elevation held 90+
+     * continuous minutes is not a realistic false-positive shape for ordinary daily life (unlike
+     * loosening the DURATION side, which is what caused the original fork revert — see this file's
+     * header) — sitting at a desk doesn't sustain even a mild elevation continuously for that long.
+     * Run ALONGSIDE the published policy, never instead of it. Mirrors the Swift twin's constants.
+     */
+    const val longGentleElevatedMarginBPM: Int = 15
+    const val longGentleMinSustainedMin: Double = 90.0
+
+    /**
      * A detected workout window. All fields are derived purely from the HR samples inside the window.
      * `startSec`/`endSec` are unix seconds; `avgBpm`/`peakBpm` are rounded; `durationMin` is whole minutes.
      * Mirrors the Swift `DetectedWorkout` struct field-for-field.
@@ -125,6 +140,9 @@ object AutoWorkoutDetector {
      * @param savedWorkouts already-saved workout windows as (startSec, endSec) pairs to exclude by overlap.
      * @param minimumSustainedMinutes qualification duration. The default preserves the published
      *   12-minute suggestion behavior; other values are for explicit shadow evaluation only.
+     * @param elevatedMarginBPM the elevated-gate margin above resting HR. The default is the
+     *   published 30-bpm policy; pass [longGentleElevatedMarginBPM] (alongside
+     *   [longGentleMinSustainedMin]) for the alternate long/low-intensity pass.
      */
     fun detect(
         hr: List<HrSample>,
@@ -132,6 +150,7 @@ object AutoWorkoutDetector {
         gravity: List<GravitySample> = emptyList(),
         savedWorkouts: List<Pair<Long, Long>> = emptyList(),
         minimumSustainedMinutes: Double = minSustainedMin,
+        elevatedMarginBPM: Int = AutoWorkoutDetector.elevatedMarginBPM,
     ): List<DetectedWorkout> {
         val seg = cleanHR(hr)
         if (seg.isEmpty()) return emptyList()

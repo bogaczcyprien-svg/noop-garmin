@@ -24,6 +24,8 @@ struct DetectedWorkoutSuggestionCard: View {
     @EnvironmentObject var repo: Repository
     @State private var candidate: DetectedWorkout?
     @State private var predictedSport: String?
+    @State private var prediction: WorkoutClassPrediction?
+    @State private var showingWhy = false
     @State private var saving = false
 
     var body: some View {
@@ -68,8 +70,42 @@ struct DetectedWorkoutSuggestionCard: View {
                     }
                     .disabled(saving)
                 }
+
+                if let prediction {
+                    whyDisclosure(prediction)
+                }
             }
         }
+    }
+
+    /// A small, cheap transparency aid (#detected-workout-sport-precision): the raw per-class scores
+    /// the SAME prediction the headline/label came from produced, so a wrong or missing guess is
+    /// diagnosable on-device instead of a black box — useful while golf/strength precision is still
+    /// being calibrated against real sessions rather than labeled data. Collapsed by default; this is
+    /// a debugging aid, not primary UI.
+    private func whyDisclosure(_ prediction: WorkoutClassPrediction) -> some View {
+        DisclosureGroup(isExpanded: $showingWhy) {
+            VStack(alignment: .leading, spacing: 4) {
+                ForEach(rankedScores(prediction), id: \.0) { className, score in
+                    HStack {
+                        Text(className).font(.caption2).foregroundStyle(StrandPalette.textSecondary)
+                        Spacer()
+                        Text(String(format: "%.2f", score))
+                            .font(.caption2.monospacedDigit())
+                            .foregroundStyle(StrandPalette.textTertiary)
+                    }
+                }
+            }
+            .padding(.top, 4)
+        } label: {
+            Text("Why?").font(StrandFont.caption).foregroundStyle(StrandPalette.textTertiary)
+        }
+    }
+
+    private func rankedScores(_ prediction: WorkoutClassPrediction) -> [(String, Double)] {
+        prediction.scores
+            .map { (String(describing: $0.key).capitalized, $0.value) }
+            .sorted { $0.1 > $1.1 }
     }
 
     /// A full, standalone headline per predicted sport — NOT `"Looks like " + sportWording(...)`
@@ -83,6 +119,7 @@ struct DetectedWorkoutSuggestionCard: View {
         case "Cycling":  return Text("Looks like a ride")
         case "Strength": return Text("Looks like a strength session")
         case "Skiing":   return Text("Looks like a ski session")
+        case "Golf":     return Text("Looks like a round of golf")
         default:         return Text("Looks like a workout")
         }
     }
@@ -94,6 +131,7 @@ struct DetectedWorkoutSuggestionCard: View {
         case "Cycling":  return "figure.outdoor.cycle"
         case "Strength": return "dumbbell.fill"
         case "Skiing":   return "figure.skiing.downhill"
+        case "Golf":     return "figure.golf"
         default:         return "waveform.path.ecg"
         }
     }
@@ -126,17 +164,22 @@ struct DetectedWorkoutSuggestionCard: View {
         Task { await load() }
     }
 
-    /// Fetches the current best candidate and, when one exists, its predicted sport — in that order,
-    /// so a view that renders mid-fetch never shows stale label text for a different window.
+    /// Fetches the current best candidate and, when one exists, its predicted sport + the raw
+    /// prediction behind it — in that order, so a view that renders mid-fetch never shows stale label
+    /// text for a different window. Deriving `predictedSport` via `sportLabel(for:)` locally (instead
+    /// of a second call to `classifiedSport(for:)`) avoids running the classifier twice for the one
+    /// candidate; both still go through the exact same `WorkoutClassPrediction`.
     private func load() async {
         let next = await repo.autoDetectCandidate()
         guard let next else {
             candidate = nil
             predictedSport = nil
+            prediction = nil
             return
         }
-        let sport = await repo.classifiedSport(for: next)
+        let result = await repo.classifiedPrediction(for: next)
         candidate = next
-        predictedSport = sport
+        prediction = result
+        predictedSport = result.flatMap(Repository.sportLabel(for:)) ?? "Workout"
     }
 }

@@ -181,6 +181,60 @@ class WorkoutTypeClassifierTest {
         assertEquals("scores: ${out.scores}", CoarseWorkoutClass.SKI, out.predictedClass)
     }
 
+    // ── GOLF: two distinct injected patterns, both long enough to clear the duration gate ──────
+
+    @Test
+    fun longRoundWithRealPausesIsClassifiedGolf() {
+        // A full 18-hole round: ~3.5h, mild walking-pace %HRR, substantial standing-still time
+        // (waiting at tees/greens), genuine walk-gait ticks for the rest.
+        val f = features(
+            durationMin = 210.0, meanHR = 95.0, peakHR = 130, meanHRRPct = 25.0, hrCV = 0.12,
+            stillFraction = 0.55, walkFraction = 0.40, runFraction = 0.0, tickCoverage = 0.7,
+            motionVariance = 0.04, kcalPerMin = 3.5,
+        )
+        val out = WorkoutTypeClassifier.classify(f)
+        assertEquals("scores: ${out.scores}", CoarseWorkoutClass.GOLF, out.predictedClass)
+    }
+
+    @Test
+    fun longerLighterRoundStillClassifiedGolf() {
+        // A slower/lighter round (more standing, less brisk between shots) but past the duration
+        // ramp's ceiling and with a smaller walk-tick share — proves the win isn't one lucky fixture.
+        val f = features(
+            durationMin = 160.0, meanHR = 92.0, peakHR = 120, meanHRRPct = 30.0, hrCV = 0.10,
+            stillFraction = 0.45, walkFraction = 0.35, runFraction = 0.0, tickCoverage = 0.6,
+            motionVariance = 0.05, kcalPerMin = 4.0,
+        )
+        val out = WorkoutTypeClassifier.classify(f)
+        assertEquals("scores: ${out.scores}", CoarseWorkoutClass.GOLF, out.predictedClass)
+    }
+
+    @Test
+    fun ordinaryWalkDurationNeverReadsAsGolf() {
+        // The same walk-shaped signature golf resembles most, but at an ORDINARY walk-workout
+        // duration (30 min, this file's default) — must stay WALK, not GOLF.
+        val f = features(
+            meanHR = 96.0, peakHR = 104, meanHRRPct = 22.0, hrCV = 0.05,
+            stillFraction = 0.1, walkFraction = 0.85, runFraction = 0.05, tickCoverage = 0.9,
+            motionVariance = 0.03, kcalPerMin = 3.5,
+        )
+        val out = WorkoutTypeClassifier.classify(f)
+        assertEquals("scores: ${out.scores}", CoarseWorkoutClass.WALK, out.predictedClass)
+    }
+
+    @Test
+    fun longLowIntensitySessionWithNoWalkGaitStaysSkiNotGolf() {
+        // A long, low-HR, high-posture-variance session with almost no walk-gait ticks — the SKI
+        // fixtures' own shape — must NOT flip to golf just because it is long and low-intensity.
+        val f = features(
+            durationMin = 150.0, meanHR = 108.0, peakHR = 150, meanHRRPct = 38.0, hrCV = 0.14,
+            stillFraction = 0.85, walkFraction = 0.1, runFraction = 0.05, tickCoverage = 0.5,
+            motionVariance = 0.20, kcalPerMin = 5.0,
+        )
+        val out = WorkoutTypeClassifier.classify(f)
+        assertEquals("scores: ${out.scores}", CoarseWorkoutClass.SKI, out.predictedClass)
+    }
+
     // ── Ambiguous → low confidence / other ──────────────────────────────────────
 
     @Test
@@ -241,7 +295,7 @@ class WorkoutTypeClassifierTest {
         assertEquals(
             setOf(
                 CoarseWorkoutClass.WALK, CoarseWorkoutClass.RUN, CoarseWorkoutClass.STRENGTH,
-                CoarseWorkoutClass.CYCLE, CoarseWorkoutClass.SKI,
+                CoarseWorkoutClass.CYCLE, CoarseWorkoutClass.SKI, CoarseWorkoutClass.GOLF,
             ),
             out.scores.keys,
         )

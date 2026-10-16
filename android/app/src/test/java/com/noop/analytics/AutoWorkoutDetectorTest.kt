@@ -72,6 +72,41 @@ class AutoWorkoutDetectorTest {
         assertTrue(AutoWorkoutDetector.detect(hr, restingHR = rest).isEmpty())
     }
 
+    /**
+     * #detected-workout-sport-precision: the alternate long-gentle policy (golf) — a 95-min span at
+     * 78 bpm clears NEITHER the published 30-bpm margin (floor 90, same shape as [lowSpanIsRejected]
+     * above) NOR the long-gentle policy's own 90-minute floor when evaluated against the PUBLISHED
+     * duration; it only surfaces when BOTH the lower margin AND the longer duration are supplied
+     * together.
+     */
+    @Test fun elevatedMarginParameterUnlocksTheLongGentlePolicy() {
+        val rest = 60
+        val start = 5_000_000L
+        val durS = 95 * 60
+        val hr = block(start - 300, 300, 60) + block(start, durS, 78) + block(start + durS, 300, 60)
+
+        assertTrue(
+            "the published 30-bpm policy must not see a mere 18-bpm elevation",
+            AutoWorkoutDetector.detect(hr, restingHR = rest).isEmpty(),
+        )
+        assertTrue(
+            "a lowered duration alone (still 30-bpm margin) must not see 78 bpm either",
+            AutoWorkoutDetector.detect(
+                hr, restingHR = rest,
+                minimumSustainedMinutes = AutoWorkoutDetector.longGentleMinSustainedMin,
+            ).isEmpty(),
+        )
+
+        val out = AutoWorkoutDetector.detect(
+            hr, restingHR = rest,
+            minimumSustainedMinutes = AutoWorkoutDetector.longGentleMinSustainedMin,
+            elevatedMarginBPM = AutoWorkoutDetector.longGentleElevatedMarginBPM,
+        )
+        assertEquals(1, out.size)
+        assertEquals(start, out[0].startSec)
+        assertTrue(out[0].durationMin >= 94)
+    }
+
     @Test fun nearWindowsAreMerged() {
         // Two 15 min bouts at 120 separated by a 3 min true rest at 65 (< 5 min merge gap, but the rest
         // is > 90 s so it CLOSES each span). The two closed spans are then MERGED into one (gap < 5 min).

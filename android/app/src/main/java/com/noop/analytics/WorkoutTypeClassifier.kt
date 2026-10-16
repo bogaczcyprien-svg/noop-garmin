@@ -14,8 +14,8 @@ import kotlin.math.sqrt
  * ramp/plateau memberships, same per-class weights, byte-identical scores for the same feature vector.
  *
  * Given a detected workout window (from [WorkoutDetector] / [AutoWorkoutDetector]), this predicts a
- * BROAD activity class — walk / run / strength / cycle / ski / other — plus a confidence, from four
- * signal families that are already decoded and stored, no raw IMU:
+ * BROAD activity class — walk / run / strength / cycle / ski / golf / other — plus a confidence,
+ * from four signal families that are already decoded and stored, no raw IMU:
  *   1. HR profile over the window (mean/peak/%HRR, HR variability shape) — [HrSample].
  *   2. Activity-class tick composition — [StepSample.activityClass] (0 still / 1 walk / 2 run,
  *      community finding #316) — the on-device per-tick gait classifier, rolled up to a window.
@@ -62,6 +62,13 @@ enum class CoarseWorkoutClass(val raw: String) {
     STRENGTH("strength"),
     CYCLE("cycle"),
     SKI("ski"),
+
+    /**
+     * A long (~90+ min), low-to-moderate-intensity round with genuine walking gait AND a meaningful
+     * amount of standing-still time — see [WorkoutTypeClassifier.golfScore] for why this is the one
+     * class here that leans on DURATION as its primary signal rather than an HR/motion shape alone.
+     */
+    GOLF("golf"),
 
     /**
      * No candidate class cleared the plausibility/margin bar — genuinely unclear, or a shape (e.g.
@@ -138,8 +145,8 @@ data class WorkoutClassPrediction(
     val confidence: Double,
     /**
      * Every scored candidate's raw match score (0..1), keyed by class. Always covers
-     * WALK/RUN/STRENGTH/CYCLE/SKI — OTHER has no prototype score (see file header) and is never a
-     * key here; it is only ever [predictedClass]. Kept so a later validation pass can check
+     * WALK/RUN/STRENGTH/CYCLE/SKI/GOLF — OTHER has no prototype score (see file header) and is never
+     * a key here; it is only ever [predictedClass]. Kept so a later validation pass can check
      * top-k / confusion against real labels, not just the single winner.
      */
     val scores: Map<CoarseWorkoutClass, Double>,
@@ -231,6 +238,7 @@ object WorkoutTypeClassifier {
         CoarseWorkoutClass.STRENGTH to strengthScore(f),
         CoarseWorkoutClass.CYCLE to cycleScore(f),
         CoarseWorkoutClass.SKI to skiScore(f),
+        CoarseWorkoutClass.GOLF to golfScore(f),
     )
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -348,6 +356,28 @@ object WorkoutTypeClassifier {
         val hr = plateau(f.meanHRRPct ?: 45.0, 20.0, 35.0, 85.0, 100.0)
         val intermittent = plateau(f.hrCV, 0.05, 0.09, 0.20, 0.32)
         return 0.30 * noGait + 0.30 * variablePosture + 0.20 * hr + 0.20 * intermittent
+    }
+
+    /**
+     * GOLF: unlike every other class here, DURATION carries the most weight (0.50) rather than an
+     * HR/motion shape alone — a round legitimately resembles a long, gentle walk (modest %HRR, real
+     * walk-gait ticks) to every OTHER signal this file reads, and nothing distinguishes it from a
+     * short walk except that nobody takes a 30-minute "walk workout" that is actually 90-150+ minutes
+     * of mostly-standing-and-strolling. The second-most-weighted term, [stillPauses], is the other
+     * half of that distinction: a dedicated walk has near-zero standing time, while a round spends a
+     * large fraction of it waiting (tee, green, the group ahead) — without this term, [walkScore]
+     * alone would usually out-score this on a genuine round, since it has no duration penalty and
+     * saturates on walk-gait ticks regardless of how long the window runs. `walkPresent` still
+     * requires REAL walking gait (not just long+still+low-HR), so a long low-HR window with almost no
+     * walk ticks — the `ski` fixtures' shape — does not accidentally read as golf (verified by hand
+     * against both ski fixtures in WorkoutTypeClassifierTest).
+     */
+    internal fun golfScore(f: WorkoutClassFeatures): Double {
+        val long = rampUp(f.durationSec, 90.0 * 60.0, 150.0 * 60.0)
+        val stillPauses = rampUp(f.stillFraction, 0.15, 0.40)
+        val lowHr = plateau(f.meanHRRPct ?: 30.0, 5.0, 10.0, 35.0, 50.0)
+        val walkPresent = rampUp(f.walkFraction, 0.25, 0.55)
+        return 0.50 * long + 0.20 * stillPauses + 0.15 * lowHr + 0.15 * walkPresent
     }
 }
 

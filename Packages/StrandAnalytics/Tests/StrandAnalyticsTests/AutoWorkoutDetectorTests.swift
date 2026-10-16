@@ -67,6 +67,32 @@ final class AutoWorkoutDetectorTests: XCTestCase {
         XCTAssertTrue(AutoWorkoutDetector.detect(hr: hr, restingBpm: 60).isEmpty)
     }
 
+    /// #detected-workout-sport-precision: the alternate long-gentle policy (golf) — a 95-min span at
+    /// 78 bpm clears NEITHER the published 30-bpm margin (floor 90, same shape as `testLowSpanIsRejected`
+    /// above) NOR the long-gentle policy's own 90-minute floor when evaluated against the PUBLISHED
+    /// duration; it only surfaces when BOTH the lower margin AND the longer duration are supplied
+    /// together, exactly how `Repository.autoDetectCandidate` calls it.
+    func testElevatedMarginParameterUnlocksTheLongGentlePolicy() {
+        let start = 5_000_000
+        let durS = 95 * 60
+        let hr = block(start - 300, 300, 60) + block(start, durS, 78) + block(start + durS, 300, 60)
+
+        XCTAssertTrue(AutoWorkoutDetector.detect(hr: hr, restingBpm: 60).isEmpty,
+                      "the published 30-bpm policy must not see a mere 18-bpm elevation")
+        XCTAssertTrue(AutoWorkoutDetector.detect(
+            hr: hr, restingBpm: 60,
+            minimumSustainedMinutes: AutoWorkoutDetector.longGentleMinSustainedMin
+        ).isEmpty, "a lowered duration alone (still 30-bpm margin) must not see 78 bpm either")
+
+        let out = AutoWorkoutDetector.detect(
+            hr: hr, restingBpm: 60,
+            minimumSustainedMinutes: AutoWorkoutDetector.longGentleMinSustainedMin,
+            elevatedMarginBPM: AutoWorkoutDetector.longGentleElevatedMarginBPM)
+        XCTAssertEqual(out.count, 1)
+        XCTAssertEqual(out.first?.startSec, start)
+        XCTAssertGreaterThanOrEqual(out.first?.durationMin ?? 0, 94)
+    }
+
     func testNearWindowsAreMerged() {
         // Two 15 min bouts at 120 separated by a 3 min true rest at 65 (< 5 min merge gap, but the rest
         // is > 90 s so it CLOSES each span). The two closed spans are then MERGED into one (gap < 5 min).

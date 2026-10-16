@@ -200,6 +200,53 @@ final class DetectedWorkoutReconciliationTests: XCTestCase {
         }
     }
 
+    /// #detected-workout-sport-precision: a round of golf-shaped session — mild (+18bpm over the
+    /// default 60bpm resting floor, well under the published +30bpm gate) but sustained continuously
+    /// for 95 minutes — must still surface a candidate. The published cardio policy alone would find
+    /// NOTHING here (every sample sits under its 90bpm floor); only the alternate long-gentle policy
+    /// (`AutoWorkoutDetector.longGentleElevatedMarginBPM`/`longGentleMinSustainedMin`) can see it.
+    /// Deliberately does NOT set `repo.workoutsLog`, so `autoDetectCandidate` takes the production
+    /// (non-TestCentre-shadow) branch regardless of `withPreferences`'s own `TestCentre.activate` call.
+    func testLongGentleSessionBelowThePublishedFloor_stillSurfacesACandidate() async throws {
+        try await withPreferences {
+            UserDefaults.standard.set(true, forKey: PuffinExperiment.autoDetectWorkoutsKey)
+            let store = try await WhoopStore.inMemory()
+            let start = Int(Date().timeIntervalSince1970) - 3 * 3_600
+            let dur = 95 * 60
+            let hr = (0...dur).map { HRSample(ts: start + $0, bpm: 78) }
+            _ = try await store.insert(Streams(hr: hr), deviceId: deviceId)
+
+            let repo = Repository(deviceId: deviceId)
+            repo.setStoreForTesting(store)
+
+            let candidate = await repo.autoDetectCandidate(daysBack: 1)
+
+            XCTAssertEqual(candidate?.startSec, start)
+            XCTAssertEqual(candidate?.durationMin, 95)
+        }
+    }
+
+    /// The published cardio policy's own short/brief sessions must NOT also get picked up a second
+    /// time by the long-gentle pass (it requires 90+ minutes) — guards against the dual-scan
+    /// concatenation in `autoDetectCandidate` ever double-reporting the SAME short session.
+    func testShortCardioSession_isNotAlsoCaughtByTheLongGentlePass() async throws {
+        try await withPreferences {
+            UserDefaults.standard.set(true, forKey: PuffinExperiment.autoDetectWorkoutsKey)
+            let store = try await WhoopStore.inMemory()
+            let start = Int(Date().timeIntervalSince1970) - 2 * 3_600
+            let hr = (0...(13 * 60)).map { HRSample(ts: start + $0, bpm: 120) }
+            _ = try await store.insert(Streams(hr: hr), deviceId: deviceId)
+
+            let repo = Repository(deviceId: deviceId)
+            repo.setStoreForTesting(store)
+
+            let candidate = await repo.autoDetectCandidate(daysBack: 1)
+
+            XCTAssertEqual(candidate?.startSec, start)
+            XCTAssertEqual(candidate?.durationMin, 13)
+        }
+    }
+
     func testScoringPreservesLegacyDetectionsCreatesNoNewRowsAndBackfillsRealOverlap() async throws {
         try await withPreferences {
             let store = try await WhoopStore.inMemory()

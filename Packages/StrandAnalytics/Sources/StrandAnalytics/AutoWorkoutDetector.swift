@@ -86,6 +86,19 @@ public enum AutoWorkoutDetector {
     /// Resting-HR fallback when the caller has no nightly RHR for the day.
     public static let defaultRestingHR = 60
 
+    /// Second, alternate detection policy (#detected-workout-sport-precision) for long, LOW-intensity
+    /// sessions the published 30-bpm/12-min policy structurally cannot see — a round of golf rarely
+    /// sustains +30 bpm continuously; walking fairways/standing between shots dips well under that
+    /// floor for well over `maxDipS` at a time, so the published policy either never opens a span or
+    /// fragments the round into several short, discarded ones. This alternate policy trades a MUCH
+    /// lower elevated margin for a MUCH longer required duration: a 15-bpm elevation held 90+
+    /// continuous minutes is not a realistic false-positive shape for ordinary daily life (unlike
+    /// loosening the DURATION side, which is what caused the original fork revert — see this file's
+    /// header) — sitting at a desk doesn't sustain even a mild elevation continuously for that long.
+    /// Run ALONGSIDE the published policy (`Repository.autoDetectCandidate`), never instead of it.
+    public static let longGentleElevatedMarginBPM = 15
+    public static let longGentleMinSustainedMin: Double = 90.0
+
     // MARK: - Inputs
 
     /// One motion-intensity reading aligned to the HR timeline (optional confirmation signal).
@@ -151,11 +164,15 @@ public enum AutoWorkoutDetector {
     ///   - savedSpans: already-saved workout windows to exclude by overlap.
     ///   - minimumSustainedMinutes: duration policy. The default is the published 12-minute policy;
     ///     callers may pass values from `shadowSustainedMinutes` only for local shadow diagnostics.
+    ///   - elevatedMarginBPM: the elevated-gate margin above resting HR. The default is the published
+    ///     30-bpm policy; pass `longGentleElevatedMarginBPM` (alongside `longGentleMinSustainedMin`)
+    ///     for the alternate long/low-intensity pass — see that constant's doc comment.
     public static func detect(hr: [(ts: Int, bpm: Int)],
                               restingBpm: Int?,
                               motion: [MotionPoint]? = nil,
                               savedSpans: [SavedWorkoutSpan] = [],
-                              minimumSustainedMinutes: Double = minSustainedMin) -> [DetectedWorkout] {
+                              minimumSustainedMinutes: Double = minSustainedMin,
+                              elevatedMarginBPM: Int = Self.elevatedMarginBPM) -> [DetectedWorkout] {
         let seg = hr.sorted { $0.ts < $1.ts }
         if seg.isEmpty { return [] }
 

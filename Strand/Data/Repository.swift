@@ -3315,9 +3315,20 @@ final class Repository: ObservableObject {
             }
             candidates = results
         } else {
+            // Published cardio-shaped policy (sustained +30bpm, 12 min) PLUS the long-gentle policy
+            // (#detected-workout-sport-precision) — the latter exists because the published policy
+            // structurally cannot see a round of golf (see `longGentleElevatedMarginBPM`'s doc
+            // comment: golf rarely sustains +30bpm continuously, so it either never opens a span or
+            // gets fragmented into short discarded ones). Concatenated, not chosen between: either
+            // can supply the single best candidate `selectAutoDetectCandidate` picks below, and a
+            // window either policy finds gets the SAME dismissal/saved-span exclusion either way.
             candidates = AutoWorkoutDetector.detect(hr: hr, restingBpm: restingBpm,
                                                     motion: nil, savedSpans: savedSpans,
                                                     minimumSustainedMinutes: AutoWorkoutDetector.minSustainedMin)
+                + AutoWorkoutDetector.detect(hr: hr, restingBpm: restingBpm,
+                                             motion: nil, savedSpans: savedSpans,
+                                             minimumSustainedMinutes: AutoWorkoutDetector.longGentleMinSustainedMin,
+                                             elevatedMarginBPM: AutoWorkoutDetector.longGentleElevatedMarginBPM)
         }
         return Self.selectAutoDetectCandidate(
             candidates,
@@ -3343,12 +3354,14 @@ final class Repository: ObservableObject {
         return true
     }
 
-    /// Predicts a sport label for a just-detected window via `WorkoutTypeClassifier`, reading the SAME
-    /// decoded HR/gravity/step streams the detector itself scanned (a small pre-roll before `startSec` on
-    /// gravity so the window's first delta isn't a false 0, matching `WorkoutDetector.activitySeries`'
-    /// own convention). This is the ONE resolver both the confirmation card's preview and the actual
-    /// `saveDetectedWorkout` call through — a pure, deterministic read over data that doesn't change in
-    /// the few seconds between showing the card and the user tapping Save, so the two can never disagree.
+    /// Runs `WorkoutTypeClassifier` over a just-detected window, reading the SAME decoded HR/gravity/
+    /// step streams the detector itself scanned (a small pre-roll before `startSec` on gravity so the
+    /// window's first delta isn't a false 0, matching `WorkoutDetector.activitySeries`' own
+    /// convention). This is the ONE resolver `classifiedSport(for:)` (the final label) and the
+    /// confirmation card's "why" disclosure both call through — a pure, deterministic read over data
+    /// that doesn't change in the few seconds between showing the card and the user tapping Save, so
+    /// the two can never disagree. Returns nil only when the window has no HR at all (can't happen for
+    /// a real detector candidate, which requires HR to exist by construction).
     ///
     /// Resolves REAL resting-HR/HRmax baselines rather than letting `WorkoutTypeFeatureExtractor` fall
     /// back to deriving them from the bout window alone — a single detected bout is, by construction, a
@@ -3359,11 +3372,7 @@ final class Repository: ObservableObject {
     /// `autoDetectCandidate`'s own `restingBpm`; HRmax from `StrainScorer.estimateHRmax` over a wide
     /// recent HR window (not the narrow bout), the SAME formula the extractor's own fallback uses, just
     /// fed a window wide enough to contain real variation.
-    ///
-    /// Falls back to the generic "Workout" label whenever the classifier isn't confident — see
-    /// `classifiedSportGates`' doc comment for the exact bar and why it's checked against raw scores
-    /// rather than `confidence`.
-    func classifiedSport(for w: DetectedWorkout) async -> String {
+    func classifiedPrediction(for w: DetectedWorkout) async -> WorkoutClassPrediction? {
         let padStart = max(0, w.startSec - 30)
         let hr = await hrSamples(from: w.startSec, to: w.endSec, limit: 20_000)
         let gravity = await gravitySamplesUnion(from: padStart, to: w.endSec, limit: 20_000)
@@ -3379,9 +3388,17 @@ final class Repository: ObservableObject {
         guard let features = WorkoutTypeFeatureExtractor.extract(
             hr: hr, gravity: gravity, steps: steps, start: w.startSec, end: w.endSec,
             restingHR: restingHR, maxHR: maxHR
-        ) else { return "Workout" }
+        ) else { return nil }
 
-        let prediction = WorkoutTypeClassifier.classify(features)
+        return WorkoutTypeClassifier.classify(features)
+    }
+
+    /// The final sport label for a just-detected window — `classifiedPrediction(for:)` run through
+    /// `sportLabel(for:)`'s gate, or the generic "Workout" fallback whenever the classifier isn't
+    /// confident enough or the window had no HR at all. See `classifiedSportGates`' doc comment for
+    /// the exact per-class bar and why it's checked against raw scores rather than `confidence`.
+    func classifiedSport(for w: DetectedWorkout) async -> String {
+        guard let prediction = await classifiedPrediction(for: w) else { return "Workout" }
         return Self.sportLabel(for: prediction) ?? "Workout"
     }
 
@@ -3402,18 +3419,28 @@ final class Repository: ObservableObject {
         let minMargin: Double   // over the runner-up's raw score
     }
 
-    /// `.run` is held to a materially higher bar than the rest, at the user's explicit request ("hyper
-    /// précis pour la course à pied"): a mislabeled run is the mistake that matters most on this
-    /// install, worth trading for more easy/ambiguous runs quietly falling back to "Workout". The other
-    /// classes' floor (0.40 score / 0.05 margin) is NOT a new gate in practice — `WorkoutTypeClassifier.
-    /// classify` already requires at least that much (its own `minPlausibleScore`/`minMargin`) before it
-    /// returns anything other than `.other` — it's named here only so the contract is explicit rather
-    /// than implicit in a different file.
+    /// `.run` and `.strength` are held to a materially higher bar than the rest, at the user's explicit
+    /// request ("hyper précis pour la course à pied... aussi de la muscu"): running and lifting are
+    /// the two sports actually logged on this install, so a mislabel there is the mistake that matters
+    /// most — worth trading for more ambiguous sessions quietly falling back to "Workout". `.run`'s
+    /// bar is verified against BOTH a hand-set fixture family and a real extractor-pipeline integration
+    /// test (`DetectedWorkoutSportLabelTests`); `.strength`'s is calibrated the same way against its own
+    /// two `WorkoutTypeClassifierTests` fixtures (scores 1.00/0.91, margins 0.30/0.21 over their ski
+    /// runner-up) but has NOT been re-verified through the real extractor pipeline the way run's was —
+    /// kept at run's own proven-achievable floor rather than the more optimistic hand-fixture numbers,
+    /// since that pipeline check is what caught run's hand-fixture margin being unrealistically generous
+    /// (0.41 by hand vs. ~0.15 for real synthetic motion data). `.golf` is new and unvalidated against
+    /// any real round, so it keeps a deliberately wide margin of its own (0.75/0.15) rather than run's
+    /// tighter one. The remaining classes' floor (0.40 score / 0.05 margin) is NOT a new gate in
+    /// practice — `WorkoutTypeClassifier.classify` already requires at least that much (its own
+    /// `minPlausibleScore`/`minMargin`) before it returns anything other than `.other` — it's named
+    /// here only so the contract is explicit rather than implicit in a different file.
     nonisolated static let classifiedSportGates: [CoarseWorkoutClass: SportGate] = [
         .run:      SportGate(minScore: 0.80, minMargin: 0.12),
+        .strength: SportGate(minScore: 0.80, minMargin: 0.15),
+        .golf:     SportGate(minScore: 0.75, minMargin: 0.15),
         .walk:     SportGate(minScore: WorkoutTypeClassifier.minPlausibleScore, minMargin: WorkoutTypeClassifier.minMargin),
         .cycle:    SportGate(minScore: WorkoutTypeClassifier.minPlausibleScore, minMargin: WorkoutTypeClassifier.minMargin),
-        .strength: SportGate(minScore: WorkoutTypeClassifier.minPlausibleScore, minMargin: WorkoutTypeClassifier.minMargin),
         .ski:      SportGate(minScore: WorkoutTypeClassifier.minPlausibleScore, minMargin: WorkoutTypeClassifier.minMargin),
     ]
 
@@ -3435,6 +3462,7 @@ final class Repository: ObservableObject {
         case .cycle:    return "Cycling"
         case .strength: return "Strength"
         case .ski:      return "Skiing"
+        case .golf:     return "Golf"
         case .other:    return nil
         }
     }

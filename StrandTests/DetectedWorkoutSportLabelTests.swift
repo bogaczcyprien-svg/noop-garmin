@@ -89,11 +89,56 @@ final class DetectedWorkoutSportLabelTests: XCTestCase {
         XCTAssertEqual(Repository.sportLabel(for: prediction), "Cycling")
     }
 
-    func testCleanStrength_getsTheStrengthLabel() {
+    /// `.strength` is held to the SAME asymmetric bar as `.run` (0.80/0.15), at the user's explicit
+    /// request ("aussi de la muscu"). Twin of `WorkoutTypeClassifierTests.
+    /// testHighHRLowCadenceWindow_isClassifiedStrength`'s fixture, scored by hand: strength = 1.0
+    /// (every term maxes out) against a 0.70 ski runner-up — comfortably clears the bar.
+    func testCleanHighHRStrength_clearsTheStrengthGate() {
         let prediction = WorkoutClassPrediction(
-            predictedClass: .strength, confidence: 0.45,
-            scores: [.run: 0.1, .walk: 0.05, .strength: 0.70, .cycle: 0.2, .ski: 0.15])
+            predictedClass: .strength, confidence: 0.6,
+            scores: [.run: 0.17, .walk: 0.0, .strength: 1.00, .cycle: 0.675, .ski: 0.70])
         XCTAssertEqual(Repository.sportLabel(for: prediction), "Strength")
+    }
+
+    /// Twin of `WorkoutTypeClassifierTests.testModerateHRBurstySets_isClassifiedStrength`'s fixture —
+    /// a GENTLER lifting session, still comfortably clears the bar (0.91 score, 0.21 margin over ski).
+    func testGentlerBurstyStrength_stillClearsTheStrengthGate() {
+        let prediction = WorkoutClassPrediction(
+            predictedClass: .strength, confidence: 0.5,
+            scores: [.run: 0.0, .walk: 0.0, .strength: 0.91, .cycle: 0.508, .ski: 0.70])
+        XCTAssertEqual(Repository.sportLabel(for: prediction), "Strength")
+    }
+
+    /// A strength prediction that clears the GENERAL 0.40/0.05 floor but not `.strength`'s own
+    /// stricter 0.80/0.15 bar — must fall back to generic, same shape as the run equivalent above.
+    func testWeakStrengthPrediction_fallsBackToGeneric() {
+        let prediction = WorkoutClassPrediction(
+            predictedClass: .strength, confidence: 0.3,
+            scores: [.run: 0.1, .walk: 0.05, .strength: 0.55, .cycle: 0.2, .ski: 0.15])
+        XCTAssertNil(Repository.sportLabel(for: prediction),
+                     "0.55 clears the general 0.40 floor but not strength's own 0.80 one")
+    }
+
+    // MARK: - GOLF
+
+    /// Twin of `WorkoutTypeClassifierTests.testLongerLighterRoundStillClassifiedGolf`'s fixture —
+    /// a realistic round with meaningful standing-still time and a MODERATE (not fully-saturating)
+    /// walk-tick share, scored by hand: golf ≈ 0.90 against a 0.70 walk runner-up (walk's own closest
+    /// competing shape). Comfortably clears the gate (score ≥ 0.75, margin ≥ 0.15).
+    func testRealisticRound_clearsTheGolfGate() {
+        let prediction = WorkoutClassPrediction(
+            predictedClass: .golf, confidence: 0.55,
+            scores: [.run: 0.0, .walk: 0.70, .strength: 0.0, .cycle: 0.12, .ski: 0.0, .golf: 0.90])
+        XCTAssertEqual(Repository.sportLabel(for: prediction), "Golf")
+    }
+
+    /// A golf prediction that clears the GENERAL floor but not golf's own wider 0.75/0.15 bar.
+    func testWeakGolfPrediction_fallsBackToGeneric() {
+        let prediction = WorkoutClassPrediction(
+            predictedClass: .golf, confidence: 0.3,
+            scores: [.run: 0.0, .walk: 0.60, .strength: 0.0, .cycle: 0.1, .ski: 0.0, .golf: 0.68])
+        XCTAssertNil(Repository.sportLabel(for: prediction),
+                     "a 0.08 margin over walk doesn't clear golf's 0.15 margin floor")
     }
 
     func testCleanSki_getsTheSkiingLabel() {

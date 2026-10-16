@@ -134,6 +134,50 @@ final class WorkoutTypeClassifierTests: XCTestCase {
         XCTAssertEqual(out.predictedClass, .ski, "scores: \(out.scores)")
     }
 
+    // MARK: - GOLF: two distinct injected patterns, both long enough to clear the duration gate
+
+    func testLongRoundWithRealPauses_isClassifiedGolf() {
+        // A full 18-hole round: ~3.5h, mild walking-pace %HRR, substantial standing-still time
+        // (waiting at tees/greens), genuine walk-gait ticks for the rest.
+        let f = features(durationMin: 210, meanHR: 95, peakHR: 130, meanHRRPct: 25, hrCV: 0.12,
+                         stillFraction: 0.55, walkFraction: 0.40, runFraction: 0.0, tickCoverage: 0.7,
+                         motionVariance: 0.04, kcalPerMin: 3.5)
+        let out = WorkoutTypeClassifier.classify(f)
+        XCTAssertEqual(out.predictedClass, .golf, "scores: \(out.scores)")
+    }
+
+    func testLongerLighterRound_stillClassifiedGolf() {
+        // A slower/lighter round (more standing, less brisk between shots) but past the duration
+        // ramp's ceiling and with a smaller walk-tick share — proves the win isn't one lucky fixture.
+        let f = features(durationMin: 160, meanHR: 92, peakHR: 120, meanHRRPct: 30, hrCV: 0.10,
+                         stillFraction: 0.45, walkFraction: 0.35, runFraction: 0.0, tickCoverage: 0.6,
+                         motionVariance: 0.05, kcalPerMin: 4.0)
+        let out = WorkoutTypeClassifier.classify(f)
+        XCTAssertEqual(out.predictedClass, .golf, "scores: \(out.scores)")
+    }
+
+    /// The same walk-shaped signature golf resembles most, but at an ORDINARY walk-workout duration
+    /// (30 min, this file's default) — must stay `.walk`, not `.golf`. Golf's whole discriminator from
+    /// a dedicated walk is duration; without it, nothing should flip.
+    func testOrdinaryWalkDuration_neverReadsAsGolf() {
+        let f = features(meanHR: 96, peakHR: 104, meanHRRPct: 22, hrCV: 0.05,
+                         stillFraction: 0.1, walkFraction: 0.85, runFraction: 0.05, tickCoverage: 0.9,
+                         motionVariance: 0.03, kcalPerMin: 3.5)
+        let out = WorkoutTypeClassifier.classify(f)
+        XCTAssertEqual(out.predictedClass, .walk, "scores: \(out.scores)")
+    }
+
+    /// A long, low-HR, high-posture-variance session with almost no walk-gait ticks — the `ski`
+    /// fixtures' own shape — must NOT flip to golf just because it is long and low-intensity. Golf
+    /// additionally requires real walk-tick presence (`walkPresent`), which this fixture lacks.
+    func testLongLowIntensitySessionWithNoWalkGait_staysSkiNotGolf() {
+        let f = features(durationMin: 150, meanHR: 108, peakHR: 150, meanHRRPct: 38, hrCV: 0.14,
+                         stillFraction: 0.85, walkFraction: 0.1, runFraction: 0.05, tickCoverage: 0.5,
+                         motionVariance: 0.20, kcalPerMin: 5)
+        let out = WorkoutTypeClassifier.classify(f)
+        XCTAssertEqual(out.predictedClass, .ski, "scores: \(out.scores)")
+    }
+
     // MARK: - Ambiguous → low confidence / other
 
     func testAmbiguousWindow_isOtherOrLowConfidence() {
@@ -175,7 +219,7 @@ final class WorkoutTypeClassifierTests: XCTestCase {
         let f = features(meanHR: 120, peakHR: 140, meanHRRPct: 40, hrCV: 0.06, motionVariance: 0.05,
                          kcalPerMin: 5)
         let out = WorkoutTypeClassifier.classify(f)
-        XCTAssertEqual(Set(out.scores.keys), Set([.walk, .run, .strength, .cycle, .ski]))
+        XCTAssertEqual(Set(out.scores.keys), Set([.walk, .run, .strength, .cycle, .ski, .golf]))
         XCTAssertNil(out.scores[.other])
         for (_, v) in out.scores {
             XCTAssertGreaterThanOrEqual(v, 0)

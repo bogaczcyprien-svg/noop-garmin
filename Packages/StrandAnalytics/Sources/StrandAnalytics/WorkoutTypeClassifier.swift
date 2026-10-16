@@ -4,8 +4,8 @@ import WhoopProtocol
 // WorkoutTypeClassifier.swift — COARSE workout-type classifier over ALREADY-CAPTURED signals.
 //
 // Given a detected workout window (from `WorkoutDetector` or `AutoWorkoutDetector`), this predicts
-// a BROAD activity class — walk / run / strength / cycle / ski / other — plus a confidence, from
-// four signal families that are already decoded and stored, no raw IMU:
+// a BROAD activity class — walk / run / strength / cycle / ski / golf / other — plus a confidence,
+// from four signal families that are already decoded and stored, no raw IMU:
 //   1. HR profile over the window (mean/peak/%HRR, HR variability shape) — `HRSample`.
 //   2. Activity-class tick composition — `StepSample.activityClass` (0 still / 1 walk / 2 run,
 //      community finding #316) — the on-device per-tick gait classifier, rolled up to a window.
@@ -52,6 +52,10 @@ public enum CoarseWorkoutClass: String, Equatable, Hashable, Sendable, Codable, 
     case strength
     case cycle
     case ski
+    /// A long (~90+ min), low-to-moderate-intensity round with genuine walking gait AND a meaningful
+    /// amount of standing-still time — see `golfScore`'s doc comment for why this is the one class here
+    /// that leans on DURATION as its primary signal rather than an HR/motion shape alone.
+    case golf
     /// No candidate class cleared the plausibility/margin bar — genuinely unclear, or a shape (e.g.
     /// swim, row, court sport) this MVP doesn't model. Never a wrong specific guess dressed up.
     case other
@@ -122,8 +126,8 @@ public struct WorkoutClassPrediction: Equatable, Sendable, Codable {
     /// inputs were (tick coverage, %HRR availability) — never higher than the evidence supports.
     public let confidence: Double
     /// Every scored candidate's raw match score (0...1), keyed by class. Always covers
-    /// `.walk/.run/.strength/.cycle/.ski` — `.other` has no prototype score (see file header) and is
-    /// never a key here; it is only ever `predictedClass`. Kept so a later validation pass can check
+    /// `.walk/.run/.strength/.cycle/.ski/.golf` — `.other` has no prototype score (see file header) and
+    /// is never a key here; it is only ever `predictedClass`. Kept so a later validation pass can check
     /// top-k / confusion against real labels, not just the single winner.
     public let scores: [CoarseWorkoutClass: Double]
 
@@ -207,6 +211,7 @@ public enum WorkoutTypeClassifier {
             .strength: strengthScore(f),
             .cycle: cycleScore(f),
             .ski: skiScore(f),
+            .golf: golfScore(f),
         ]
     }
 
@@ -305,6 +310,26 @@ public enum WorkoutTypeClassifier {
         let hr = plateau(f.meanHRRPct ?? 45, 20, 35, 85, 100)
         let intermittent = plateau(f.hrCV, 0.05, 0.09, 0.20, 0.32)
         return 0.30 * noGait + 0.30 * variablePosture + 0.20 * hr + 0.20 * intermittent
+    }
+
+    /// GOLF: unlike every other class here, DURATION carries the most weight (0.50) rather than an
+    /// HR/motion shape alone — a round legitimately resembles a long, gentle walk (modest %HRR, real
+    /// walk-gait ticks) to every OTHER signal this file reads, and nothing distinguishes it from a
+    /// short walk except that nobody takes a 30-minute "walk workout" that is actually 90-150+ minutes
+    /// of mostly-standing-and-strolling. The second-most-weighted term, `stillPauses`, is the other
+    /// half of that distinction: a dedicated walk has near-zero standing time, while a round spends
+    /// a large fraction of it waiting (tee, green, the group ahead) — without this term, `walkScore`
+    /// alone would usually out-score this on a genuine round, since `walkScore` has no duration
+    /// penalty and saturates on walk-gait ticks regardless of how long the window runs. `walkPresent`
+    /// still requires REAL walking gait (not just long+still+low-HR), so a long low-HR window with
+    /// almost no walk ticks — the `ski` fixtures' shape — does not accidentally read as golf (verified
+    /// by hand against both `testDownhillSkiSession` and `testSkiSession_lighterDay`).
+    static func golfScore(_ f: WorkoutClassFeatures) -> Double {
+        let long = rampUp(f.durationSec, 90 * 60, 150 * 60)
+        let stillPauses = rampUp(f.stillFraction, 0.15, 0.40)
+        let lowHr = plateau(f.meanHRRPct ?? 30, 5, 10, 35, 50)
+        let walkPresent = rampUp(f.walkFraction, 0.25, 0.55)
+        return 0.50 * long + 0.20 * stillPauses + 0.15 * lowHr + 0.15 * walkPresent
     }
 }
 
